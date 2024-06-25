@@ -5,7 +5,7 @@ import math
 from GPT_May_2024 import *
 
 class Transcript:
-    format_info = '''# Interview Transcript Information
+    format_description = '''# Interview Transcript Information
 
 - Below is information about the transcripts that are the center of analysis in this project 
 - Transcripts consist of interviews between 2 people:
@@ -55,7 +55,7 @@ class Transcript:
 
     def __repr__(self,INCL_INFO=True):
         if INCL_INFO:
-            OUT = f'{Transcript.format_info}\n\n# Transcript {self.id} Content\n\nTranscript {self.id} is provided below:\n\n```\n'
+            OUT = f'{Transcript.format_description}\n\n# Transcript {self.id} Content\n\nTranscript {self.id} is provided below:\n\n```\n'
         else:
             OUT = f'# Transcript ID: {self.id}\n\n```\n'
         OUT += ''.join([repr(self.turns[i]) for i in self.turns]) + '\n```\n'
@@ -81,7 +81,7 @@ Your output should be a json list of speech turn IDs where you would like to div
 ```
 '''
 
-        dividerGPT = GPT(self.parentProject.info + Transcript.format_info + system_prompt)
+        dividerGPT = GPT(self.parentProject.info + Transcript.format_description + system_prompt)
         dividerGPT.run(ADD_USER_MESSAGE=self.__repr__(), OUTPUT_JSON=True)
         self.section_div_ids = dividerGPT.latest_output_JSON['sections']
         last_turn = list(self.turns)[-1]
@@ -191,7 +191,7 @@ class Project:
         for i in INPUT: self.analysis[TYPE.lower()][i].update(INPUT[i])
 
     def stringifyLabels(self, TYPE, LOD='', INCL_INFO = True, INITIAL_MSG = None):
-        if INCL_INFO: OUT = globals()[TYPE.capitalize()].format_info
+        if INCL_INFO: OUT = globals()[TYPE.capitalize()].format_description
         else: OUT = ''
 
         if INITIAL_MSG != None: OUT += INITIAL_MSG
@@ -318,6 +318,55 @@ class Project:
             first_section = False
             counter += 1
 
+    def createAbstraction(self, TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL, num_type_per_cycle=3, approx_sub_type_per_type=6):
+
+        if TYPE not in self.analysis: self.analysis[TYPE] = {}
+
+        TO_GROUP = self.analysis[SUB_TYPE]
+
+        sub_type_count = len(TO_GROUP) + 1
+
+        num_cycles = math.ceil(sub_type_count / (num_type_per_cycle * approx_sub_type_per_type))
+
+        previously_generated_codes_info = f'''# Previously Generated {SUB_TYPE_PLURAL}
+
+We have previously generated {sub_type_count} thematic {SUB_TYPE_PLURAL} from a collection of transcripts. These {SUB_TYPE_PLURAL} were selected based on their relevance to the project's research question. 
+
+The previously generated {SUB_TYPE_PLURAL} are provided below:
+'''
+        abstracting_task = f'''# Your Task: Grouping thematic {SUB_TYPE_PLURAL} into {TYPE_PLURAL}
+
+Group these {SUB_TYPE_PLURAL} we previously generated into thematic {TYPE_PLURAL}. Don't generate the {TYPE_PLURAL} all at once. Rather, I will ask you to generate a few {TYPE_PLURAL} at a time.
+
+'''
+        full_system_prompt = self.info +  f"\n\n{self.stringifyLabels(TYPE=SUB_TYPE,LOD='no_children',INCL_INFO = True,INITIAL_MSG = previously_generated_codes_info)}\n\n" + abstracting_task + Abstraction.format_description(TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL)
+
+        trunc_chain = []
+        for cycle in range(num_cycles):
+            if trunc_chain == []:
+                base_chain = []
+            else:
+                base_chain += trunc_chain
+
+            look4categories = f"### Round {cycle + 1} of Searching for Categories\n\nPlease look for similar codes and group them into categories. Limit the number of categories you generate during this round to: {num_type_per_cycle} categories. Remember, categories should be relevant to this project's research question: \"{self.research_question}\".\n\n"
+            base_chain.append({'role': 'user', 'content': look4categories + Abstraction.generate_output_format(TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL)})
+            trunc_chain.append({'role': 'user', 'content': look4categories})
+
+            abstractorGPT = GPT(full_system_prompt, BASE_CHAIN=base_chain, )
+            abstractorGPT.run(OUTPUT_JSON=True)
+
+            self.validate_repair(
+                THINGS_TO_CHECK=abstractorGPT.latest_output_JSON,
+                VALIDATOR_FUNC=self.validate_children_ids,
+                GPT2USE=abstractorGPT,
+                THINGS_REFERENCE=TO_GROUP,
+                CUSTOM_PROBLEM_MSG="Please double check to make sure the code IDs you've provided actually match existing codes."
+            )
+            trunc_chain.append({'role': 'assistant', 'content': categorizorGPT.latest_output_text})
+            self.addLabels(abstractorGPT.latest_output_JSON, TYPE)
+
+            print("Generate categories. Cycle:", cycle)
+
 class Label:
     def __init__(self, parentProject, INPUT):
         self.parentProject = parentProject
@@ -373,7 +422,7 @@ class Label:
             if self.type == 'code':
                 self.children[child_id] = self.parentProject.transcripts[child_id[0]].getSents(child_id)
             else:
-                self.children[child_id] = self.parentProject.analysis[self.type][child_id]
+                self.children[child_id] = self.parentProject.analysis[self.sub_type][child_id]
 
     def update(self, INPUT):
         if 'name' in INPUT: self.name = INPUT['name']
@@ -383,7 +432,7 @@ class Label:
         else: print('No excerpts')
 
 class Code(Label):
-    format_info = '''### Format of a code
+    format_description = '''### Format of a code
 
 Below is the format of a single code:
 
@@ -490,43 +539,56 @@ Output code updates in the following format as a list (notice, not every field i
 
         return children2output
 
-class Category(Label):
-    format_info = '''### Format of a category
+class Abstraction(Label):
+    def __init__(self, parentProject, INPUT, TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL):
 
-Below is the format of a single category:
+        self.type = TYPE
+        self.type_plural = TYPE_PLURAL
+        self.sub_type = SUB_TYPE
+        self.sub_type_plural = SUB_TYPE_PLURAL
+        super().__init__(parentProject, INPUT)
+
+    @staticmethod
+    def format_description(TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL):
+        return f'''### Format of a {TYPE}
+
+Below is the format of a single {TYPE}:
 
 ```json
-{
-    "id": "", # A short, unique identifier for the category. Make sure it does not conflict with existing category ids.
-    "name": "", # A short, but descriptive name for the category. It should only be a few words long.
-    "description": "", # A detailed description of the category. This should be detailed enough to understand without additional context (aside from the research question)
-    "context": "", # Provides additional context to explain why the codes below are encapsulated by this category. 
+{{
+    "id": "", # A short, unique identifier for the {TYPE}. Make sure it does not conflict with existing {TYPE} ids.
+    "name": "", # A short, but descriptive name for the {TYPE}. It should only be a few words long.
+    "description": "", # A detailed description of the {TYPE}. This should be detailed enough to understand without additional context (aside from the research question)
+    "context": "", # Provides additional context to explain why the {SUB_TYPE_PLURAL} below are encapsulated by this {TYPE}. 
     "children": [
-        "ID1", # Includes code ID1 within this category
-        "ID2" # Includes code ID2 within of this category
+        "ID1", # Includes {SUB_TYPE} ID1 within this {TYPE}
+        "ID2" # Includes {SUB_TYPE} ID2 within of this {TYPE}
     ]
-}
+}}
 ```
 '''
-    generate_categories_output_format = '''### Output Format
+
+    @staticmethod
+    def generate_output_format(TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL):
+        return f'''### Output Format
 
 Output category in the following format as a list:
 
 ```json
-{
-    "id":{ # category 1
-        "id": "", # A short, unique identifier for the category. Make sure it does not conflict with existing category ids.
-        "name": "", # A short, but descriptive name for the category. It should only be a few words long.
-        "description": "", # A detailed description of the category. This should be detailed enough to understand without additional context (aside from the research question)
-        "context": "", # Provides additional context to explain why the codes below are encapsulated by this category. 
+{{
+    "id":{{ # {TYPE} 1
+        "id": "", # A short, unique identifier for the {TYPE}. Make sure it does not conflict with existing {TYPE} ids.
+        "name": "", # A short, but descriptive name for the {TYPE}. It should only be a few words long.
+        "description": "", # A detailed description of the {TYPE}. This should be detailed enough to understand without additional context (aside from the research question)
+        "context": "", # Provides additional context to explain why the {SUB_TYPE_PLURAL} below are encapsulated by this {TYPE}. 
         "children": [
-            "ID1", # Includes code ID1 within this category
-            "ID2" # Includes code ID2 within of this category
-            "ID3" # Includes code ID2 within of this category
-            "ID4" # Includes code ID4 within of this category
+            "ID1", # Includes {SUB_TYPE} ID1 within this {TYPE}
+            "ID2", # Includes {SUB_TYPE} ID2 within of this {TYPE}
+            "ID3", # Includes {SUB_TYPE} ID2 within of this {TYPE}
+            "ID4", # Includes {SUB_TYPE} ID4 within of this {TYPE}
         ]
-    },
-    "id":{ # category 2
+    }},
+    "id":{{ # {TYPE} 2
         "id": "", 
         "name": "", 
         "description": "", 
@@ -534,73 +596,38 @@ Output category in the following format as a list:
         "children": [
             "", 
         ]
-    },
+    }},
     # etc.
-}
+}}
 ```
 '''
-    update_codes_output_format = ''
 
-    def __init__(self, parentProject, INPUT):
+    @staticmethod
+    def update_output_format(TYPE, TYPE_PLURAL, SUB_TYPE, SUB_TYPE_PLURAL):
+        return f'''### Output Format
 
-        self.type = 'category'
-        self.sub_type = 'code'
-        super().__init__(parentProject, INPUT)
-
-class Theme(Label):
-    format_info = '''### Format of a Theme
-
-Below is the format of a single Theme:
+Output {TYPE} updates in the following format as a list (notice, not every field in the {TYPE} needs to be updated). 
 
 ```json
-{
-    "id": "", # A short, unique identifier for the Theme. Make sure it does not conflict with existing Theme ids.
-    "name": "", # A short, but descriptive name for the Theme. It should only be a few words long.
-    "description": "", # A detailed description of the Theme. It should be a full, coherent, answer to the project's research question.
-    "context": "", # Provides additional context to explain why the Categories below are encapsulated by this Theme. 
-    "children": [
-        "ID1", # Includes category ID1 within this Theme
-        "ID2" # Includes category ID2 within of this Theme
-    ]
-}
-```
-'''
-    generate_themes_output_format = '''### Output Format
-
-Output Themes in the following format as a list:
-
-```json
-{
-    "id":{ # Theme 1
-        "id": "", # A short, unique identifier for the Theme. Make sure it does not conflict with existing Theme ids.
-        "name": "", # A short, but descriptive name for the Theme. It should only be a few words long.
-        "description": "", # A detailed description of the Theme. It should be a full, coherent, answer to the project's research question.
-        "context": "", # Provides additional context to explain why the Categories below are encapsulated by this Theme. 
-        "categories": [
-            "ID1", # Includes category ID1 within this Theme
-            "ID2" # Includes category ID2 within of this Theme
-            "ID3" # Includes category ID2 within of this Theme
-            "ID4" # Includes category ID4 within of this Theme
-        ]
-    },
-    "id":{ # Theme 2
-        "id": "", 
-        "name": "", 
-        "description": "", 
-        "context": "", 
+{{
+    "abc":{{ # updates the {TYPE} with id "abc"
+        "name": "", # updates the name of this {TYPE}
+        "description": "", # updates the description of this {TYPE}
+        "context": "", # updates the context of this {TYPE}
         "children": [
-            "", 
+            "ID1", # Adds {SUB_TYPE} ID1 to this {TYPE}
+            "ID2", # Adds {SUB_TYPE} ID2 to this {TYPE}
+            "ID3", # Adds {SUB_TYPE} ID2 to this {TYPE}
+            "ID4", # Adds {SUB_TYPE} ID4 to this {TYPE}
         ]
-    },
+    }},
+    "xyz":{{ # updates the {TYPE} with id "xyz"
+        "context": "", # updates the context of this {TYPE}
+        "children": [
+            "ID7", # Adds {SUB_TYPE} ID7 to this {TYPE}
+        ]
+    }},
     # etc.
-}
+}}
 ```
 '''
-    update_codes_output_format = ''
-    def __init__(self, parentProject, INPUT):
-
-        self.type = 'theme'
-        self.sub_type = 'category'
-        super().__init__(parentProject, INPUT)
-
-
