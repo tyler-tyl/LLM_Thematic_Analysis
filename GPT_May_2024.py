@@ -23,7 +23,8 @@ import json
 import os
 
 # api_key = os.environ["OPENAI_API_KEY"]
-project_key = ''
+
+project_key = os.environ["TMAI_API_KEY"]
 
 from openai import OpenAI
 
@@ -42,43 +43,41 @@ grey = '\033[97m'
 black = '\033[90m'
 defaultcolor = '\033[99m'
 
-"""
-reset = '\033[0m'
-bold = '\033[01m'
-disable = '\033[02m'
-underline = '\033[04m'
-reverse = '\033[07m'
- strikethrough = '\033[09m'
-  invisible = '\033[08m'
+class st:
+    reset = '\033[0m'
+    bold = '\033[01m'
+    disable = '\033[02m'
+    underline = '\033[04m'
+    reverse = '\033[07m'
+    strikethrough = '\033[09m'
+    invisible = '\033[08m'
 
-   class fg:
-        black = '\033[30m'
-        red = '\033[31m'
-        green = '\033[32m'
-        orange = '\033[33m'
-        blue = '\033[34m'
-        purple = '\033[35m'
-        cyan = '\033[36m'
-        lightgrey = '\033[37m'
-        darkgrey = '\033[90m'
-        lightred = '\033[91m'
-        lightgreen = '\033[92m'
-        yellow = '\033[93m'
-        lightblue = '\033[94m'
-        pink = '\033[95m'
-        lightcyan = '\033[96m'
+class fg:
+    black = '\033[30m'
+    red = '\033[31m'
+    green = '\033[32m'
+    orange = '\033[33m'
+    blue = '\033[34m'
+    purple = '\033[35m'
+    cyan = '\033[36m'
+    lightgrey = '\033[37m'
+    darkgrey = '\033[90m'
+    lightred = '\033[91m'
+    lightgreen = '\033[92m'
+    yellow = '\033[93m'
+    lightblue = '\033[94m'
+    pink = '\033[95m'
+    lightcyan = '\033[96m'
 
-    class bg:
-        black = '\033[40m'
-        red = '\033[41m'
-        green = '\033[42m'
-        orange = '\033[43m'
-        blue = '\033[44m'
-        purple = '\033[45m'
-        cyan = '\033[46m'
-        lightgrey = '\033[47m'
-"""
-
+class bg:
+    black = '\033[40m'
+    red = '\033[41m'
+    green = '\033[42m'
+    orange = '\033[43m'
+    blue = '\033[44m'
+    purple = '\033[45m'
+    cyan = '\033[46m'
+    lightgrey = '\033[47m'
 
 class GPT:
     def __init__(self, SYSTEM_PROMPT='Answer concisely', BASE_CHAIN=None, MODEL='gpt-4o', TEMP=0.1, FREQ_PENALTY=0,
@@ -101,6 +100,7 @@ class GPT:
 
     @staticmethod
     def printChain(INPUT_CHAIN):
+        print(f"{fg.black+bg.lightgrey}\n\nPRINTING NEW CHAIN\n\n")
         for i in INPUT_CHAIN: GPT.printSingleMessage(i)
         tokens = GPT.countTokens(INPUT_CHAIN, VERBOSE=True)
         GPT.tokenCost(tokens, IS_INPUT=True, VERBOSE=True)
@@ -108,31 +108,31 @@ class GPT:
     @staticmethod
     def printSingleMessage(INPUT_MESSAGE, IS_INPUT=True, SPAN=span):
         if not IS_INPUT:
-            print(blue + span + '\n' + 'OUTPUT' + ':\n' + INPUT_MESSAGE + '\n\n')
+            print(f"{fg.black+bg.blue}OUTPUT:\n{INPUT_MESSAGE}\n{st.reset}\n")
             return
         elif INPUT_MESSAGE['role'] == 'system':
-            color = red
+            color = fg.black+bg.red
         elif INPUT_MESSAGE['role'] == 'user':
-            color = green
+            color = fg.black+bg.green
         else:
-            color = pink
-        print(color + span + '\n' + INPUT_MESSAGE['role'].upper() + ':\n' + INPUT_MESSAGE['content'] + '\n')
+            color = fg.black+bg.purple
+        print(f"{color}{INPUT_MESSAGE['role'].upper()}:\n{st.reverse}{INPUT_MESSAGE['content']}{st.reset}\n")
 
     @staticmethod
     def countTokens(INPUT, MODEL='gpt-4o', VERBOSE=False):
-        input_combined = '\n\n\n'.join([x['role'].upper() + ': ' + x['content'] for x in INPUT]) if isinstance(INPUT, (
+        input_combined = '\n'.join([x['role'].upper() + ': ' + x['content'] for x in INPUT]) if isinstance(INPUT, (
             dict, list)) else INPUT
         encoder = tiktoken.encoding_for_model(MODEL)
         encoding = encoder.encode(input_combined)
         tokens = len(encoding)
-        if VERBOSE: print(f'MODEL: {MODEL}\nTOKEN COUNT: {tokens}')
+        if VERBOSE: print(f'{fg.lightgrey+bg.black}MODEL: {MODEL}\nTOKEN COUNT: {tokens}{st.reset}')
         return tokens
 
     @staticmethod
     def tokenCost(TOKENCOUNT, IS_INPUT=True, INPUT_COST_PER_MILLION=5, VERBOSE=False):
 
         cost = TOKENCOUNT * INPUT_COST_PER_MILLION / 1000000 if IS_INPUT else TOKENCOUNT * INPUT_COST_PER_MILLION / 1000000
-        if VERBOSE: print(f'COST: {cost}')
+        if VERBOSE: print(f'{fg.lightgrey+bg.black}COST: {cost}{st.reset}')
         return cost
 
     def run(self, OUTPUT_JSON=False, ADD_USER_MESSAGE=None, VERBOSE=True):
