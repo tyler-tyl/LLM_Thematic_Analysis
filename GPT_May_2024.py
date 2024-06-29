@@ -1,6 +1,9 @@
-"""
+
 message = [
 {'role': 'system','content': '''You are a research and writing assistant. You write in a concise, academic, straightforward tone.'''},
+{'role': 'user','content': ''''''},
+{'role': 'assistant','content': ''''''},
+{'role': 'assistant','content': ''''''},
 {'role': 'user','content': ''''''},
 {'role': 'user','content': ''''''},
 #{'role': 'assistant','content': ''''''},
@@ -17,7 +20,7 @@ message = [
 #{'role': 'user','content': ''''''},
 #{'role': 'assistant','content': ''''''},
 ]
-"""
+
 
 import json
 import os
@@ -31,17 +34,6 @@ from openai import OpenAI
 client = OpenAI(api_key=project_key)
 
 import tiktoken
-
-span = '_' * 120
-red = '\033[91m'
-green = '\033[92m'
-yellow = '\033[93m'
-blue = '\033[94m'
-pink = '\033[95m'
-teal = '\033[96m'
-grey = '\033[97m'
-black = '\033[90m'
-defaultcolor = '\033[99m'
 
 class st:
     reset = '\033[0m'
@@ -85,8 +77,8 @@ class GPT:
         if BASE_CHAIN is None: BASE_CHAIN = []
         self.system_prompt = SYSTEM_PROMPT
         BASE_CHAIN = [BASE_CHAIN] if isinstance(BASE_CHAIN, dict) else BASE_CHAIN
-        self.base_chain = BASE_CHAIN
-        self.cur_chain = BASE_CHAIN
+        self.base_chain = [x for x in BASE_CHAIN]
+        self.cur_chain = [x for x in BASE_CHAIN]
 
         self.config = {
             'model': MODEL,
@@ -98,17 +90,25 @@ class GPT:
         self.latest_output_text = None
         self.latest_output_JSON = None
 
+    def clear(self):
+        self.cur_chain = self.base_chain
+
     @staticmethod
     def printChain(INPUT_CHAIN):
-        print(f"{fg.black+bg.lightgrey}\n\nPRINTING NEW CHAIN\n\n")
+        new_chain_ascii = '''  _   _ _______        __   ____ _   _    _    ___ _   _ 
+ | \ | | ____\ \      / /  / ___| | | |  / \  |_ _| \ | |
+ |  \| |  _|  \ \ /\ / /  | |   | |_| | / _ \  | ||  \| |
+ | |\  | |___  \ V  V /   | |___|  _  |/ ___ \ | || |\  |
+ |_| \_|_____|  \_/\_/     \____|_| |_/_/   \_\___|_| \_|'''
+        print(f"{fg.black+bg.lightgrey}\n{new_chain_ascii}\n\n\n{st.reset}")
         for i in INPUT_CHAIN: GPT.printSingleMessage(i)
         tokens = GPT.countTokens(INPUT_CHAIN, VERBOSE=True)
         GPT.tokenCost(tokens, IS_INPUT=True, VERBOSE=True)
 
     @staticmethod
-    def printSingleMessage(INPUT_MESSAGE, IS_INPUT=True, SPAN=span):
+    def printSingleMessage(INPUT_MESSAGE, IS_INPUT=True,):
         if not IS_INPUT:
-            print(f"{fg.black+bg.blue}OUTPUT:\n{INPUT_MESSAGE}\n{st.reset}\n")
+            print(f"{fg.black+bg.blue+st.bold}OUTPUT:\n{st.reverse}{INPUT_MESSAGE}\n{st.reset}")
             return
         elif INPUT_MESSAGE['role'] == 'system':
             color = fg.black+bg.red
@@ -116,7 +116,7 @@ class GPT:
             color = fg.black+bg.green
         else:
             color = fg.black+bg.purple
-        print(f"{color}{INPUT_MESSAGE['role'].upper()}:\n{st.reverse}{INPUT_MESSAGE['content']}{st.reset}\n")
+        print(f"{color}{INPUT_MESSAGE['role'].upper()}:\n{st.reverse}{INPUT_MESSAGE['content']}\n{st.reset}")
 
     @staticmethod
     def countTokens(INPUT, MODEL='gpt-4o', VERBOSE=False):
@@ -125,7 +125,7 @@ class GPT:
         encoder = tiktoken.encoding_for_model(MODEL)
         encoding = encoder.encode(input_combined)
         tokens = len(encoding)
-        if VERBOSE: print(f'{fg.lightgrey+bg.black}MODEL: {MODEL}\nTOKEN COUNT: {tokens}{st.reset}')
+        if VERBOSE: print(f'{fg.lightgrey+bg.black}MODEL: {MODEL}\nTOKEN COUNT: {tokens}\n{st.reset}')
         return tokens
 
     @staticmethod

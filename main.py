@@ -65,28 +65,28 @@ class Transcript:
 
     def divide(self,tokens_per_section = 2000):
         num_divisions = math.ceil(GPT.countTokens(self.__repr__()) / tokens_per_section)
-        system_prompt = f'# Your Task\n\nThe transcript is too long to be reviewed all at once, your task is to divide it into around {num_divisions} sections that can be provided one at a time to a different reviewer. Each section should not end abruptly or cut off a train of thought.' + '''
+        divider_task = f'''# Your Task\n\nThe transcript is too long to be reviewed all at once, your task is to divide it into around {num_divisions} sections that can be provided one at a time to a different reviewer. Each section should not end abruptly or cut off a train of thought.
 
 ## Task Output Format
 
 Your output should be a json list of speech turn IDs where you would like to divide the transcript. A division in the transcript will be created AFTER the speech turns matching the IDs you provide; this means that each section includes the speech turns you identify as the last speech turn in that section.
 
 ```
-{
+{{
     "sections":[
         'M.16.1',  
         'M.34.2', 
         ...
         'M.60.1', 
     ]
-}
+}}
 ```
 
-In this example, 'M.16.1' represents the ID of last speech turn in section 1, 'M.34.2' represents the ID of last speech turn in section 2, 'M.60.1' represents the ID of last speech turn in the last section; this should be the last speech turn in the entire transcript
+In this example, 'M.16.1' represents the ID of last speech turn in section 1, 'M.34.2' represents the ID of last speech turn in section 2, 'M.60.1' represents the ID of last speech turn in the last section; this should be the last speech turn in the entire transcript.
 '''
 
-        dividerGPT = GPT(self.parentProject.info + system_prompt)
-        dividerGPT.run(ADD_USER_MESSAGE=self.__repr__(INCL_INFO=True), OUTPUT_JSON=True)
+        dividerGPT = GPT(self.parentProject.info + self.__repr__(INCL_INFO=True))
+        dividerGPT.run(ADD_USER_MESSAGE=divider_task, OUTPUT_JSON=True)
         self.section_div_ids = dividerGPT.latest_output_JSON['sections']
         if len(self.section_div_ids) != num_divisions: assert 'Divider Mishap'
         last_turn = list(self.turns)[-1]
@@ -431,10 +431,7 @@ class Label:
         return OUTPUT
     def add_children(self, child_list):
         for child_id in child_list:
-            if self.type == 'code':
-                self.children[child_id] = self.parentProject.transcripts[child_id[0]].getSents(child_id)
-            else:
-                self.children[child_id] = self.parentProject.analysis[self.sub_type][child_id]
+            self.children[child_id] = self.parentProject.analysis[self.sub_type][child_id]
 
     def update(self, INPUT):
         if 'name' in INPUT: self.name = INPUT['name']
@@ -526,6 +523,153 @@ Output {TYPE} updates in the following format as a list (notice, not every field
 }}
 ```
 '''
+
+class Code(Label): # v2
+    format_description = '''### Format of Codes
+
+Below is the format of thematic analysis codes:
+
+```json
+{ 
+    "id" : { # code 1
+        "id": "", 
+        "name": "", 
+        "description": "", 
+        "children": {
+            "T.1.1.2" : "context",
+            "T.0.1.0-T.3.1.3" : "context" 
+        }
+    }, 
+    "id" : { # code 2
+        "id": "", 
+        "name": "", 
+        "description": "", 
+        "children": {
+            "Z.15.1.2" : "context",
+            "T.16.1.0" : "context",
+            "Z.24.1.0-Z.28.2.3" : "context",
+        }
+    }, 
+    # etc.
+}
+```
+
+"id" A short, unique identifier for the code. Make sure it does not conflict with existing code ids.
+"name" A short, but descriptive name for the code. It should only be a few words long.
+"description" A detailed description of the code. This should be detailed enough to understand without much additional context
+"children" Includes all the excerpts/quotes that are associated with this code
+    - The example code above includes two child excerpt/quotes: "T.1.1.2" and "T.0.1.0-T.3.1.3". 
+    - "T.1.1.2" would highlight a single sentence in the transcript. 
+    - "T.0.1.0-T.3.1.3" highlights a range of child excerpts/quotes in the transcript. For instance, "T.0.1.0-T.3.1.3" refers to all excerpts/quotes between T.0.1.0 up to (and including) T.3.1.3.
+    - In place of "context" you must also provide relevant details to explain the excerpt/quote's connection to the code. Ensure the context makes the code understandable without access to the full transcript.
+
+Below is an example code from an entirely different project:
+
+```json
+{ 
+    "BEN1" : {
+        "id": "BEN1", 
+        "name": "Benefits of Remote Work", 
+        "description": "This code captures the positive aspects and advantages of working remotely, as described by the interviewee.", 
+        "children": {
+            "B.6.2.0" : "Alex describes remote work as a game-changer, highlighting its flexibility and better balance between professional and personal life.",
+            "B.8.2.0" : "Alex mentions the importance of project management tools and communication platforms, which help in staying productive while working remotely."
+        }
+    }, 
+    "CHA1" : {
+        "id": "CHA1", 
+        "name": "Challenges of Remote Work", 
+        "description": "This code captures the difficulties and obstacles associated with remote work, as discussed by the interviewee.", 
+        "children": {
+            "B.6.2.2" : "Alex discusses the challenges of staying motivated and managing time effectively while working remotely.",
+            "B.10.2.0-B.10.2.2" : "Alex emphasizes the importance of regular video meetings and collaborative tools for maintaining clear and frequent communication with the team."
+        }
+    }
+}
+```
+
+'''
+    first_new_codes_output_format = '''### Output Format
+
+    Output codes in the following format as a list:
+
+    ```json
+    {
+        "id":{ # code 1. 
+            "id", # The id should be a short, unique identifier for the code. Make sure it does not conflict with existing code ids.
+            "name": "", # A short, but descriptive name for the code. It should only be a few words long.
+            "description": "", # A detailed description of the theme. This should be detailed enough to understand without additional context (aside from the research question)
+            "context": "", # Provides additional context to explain how the sentences/excerpts below connect to the code. 
+            "children": [
+                "A.1.1.2", # You can highlight a single sentence. For instance, this particular list item refers to the sentence: A.1.1.2. Output only the sentence IDs not the sentence themselves. 
+                "A.0.1.0-A.3.1.3" # You can also highlight a range of sentences in the transcript. For instance, this particular list items refers to all sentences between A.0.1.0 up to (and including) A.3.1.3. Output only the sentence IDs not the sentence themselves. 
+            ]
+        },
+        "id":{ # code 2
+            "id": "", 
+            "name": "", 
+            "description": "", 
+            "context": "", 
+            "children": [
+                "", 
+            ]
+        },
+        # etc.
+    }
+    ```
+    '''
+    update_codes_output_format = '''### Output Format
+
+    Output code updates in the following format as a list (notice, not every field in the code needs to be updated). Output only the sentence IDs not the sentence themselves:
+
+    ```json
+    {
+        "abc":{ # updates the code with id "abc"
+            "name": "", # updates the name of this code
+            "description": "", # updates the description of this code
+            "context": "", # updates the context of this code
+            "children": [
+                "N.35.1.2", # adds the sentence N.35.1.2 to the excerpts included in this code. Output only the sentence IDs not the sentence themselves. 
+                "N.37.1.0-N.39.1.3" # adds the range of sentences from N.37.1.0 up to and including N.39.1.3 to the excerpts included in this code. Output only the sentence IDs not the sentence themselves. 
+            ]
+        },
+        "xyz":{ # updates the code with id "xyz"
+            "context": "", # updates the context of this code
+            "children": [
+                "N.16.1.2", # adds the sentence N.16.1.2 to the excerpts included in this code. Output only the sentence IDs not the sentence themselves. 
+            ]
+        },
+        # etc.
+    }
+    ```
+    '''
+
+    def __init__(self, parentProject, INPUT):
+        self.type = 'code'
+        self.sub_type = 'excerpt'
+        super().__init__(parentProject, INPUT)
+
+    def add_children(self, child_list):
+        for child_id in child_list:
+            self.children[child_id] = {
+                "content":self.parentProject.transcripts[child_id[0]].getSents(child_id),
+                "context":child_list[child_id]
+            }
+
+    def dictify_children(self, LOD):
+        if LOD == 'full':  # more of a stringify than a listify
+            children2output = []
+            for id in self.children:
+                if isinstance(self.children[id]["content"], Sentence): # TODO
+                    children2output.append(str(self.children[id]))
+                elif isinstance(self.children[id], list):
+                    combined = '\n'.join([str(x) for x in self.children[id]])
+                    children2output.append(combined)
+
+        if LOD == 'id': children2output = [x for x in self.children]
+
+        return children2output
+
 
 class Code(Label):
     format_description = '''### Format of a code
